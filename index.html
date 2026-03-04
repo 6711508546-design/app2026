@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบเช็คชื่อ & คะแนนความประพฤติ</title>
+    <style>
+        body { 
+            font-family: 'Kanit', sans-serif; 
+            background-color: #f4f7f6;
+            padding: 20px; 
+            text-align: center; 
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .student-card { 
+            background: white;
+            border: 1px solid #ddd; 
+            padding: 15px; 
+            margin: 10px auto; 
+            border-radius: 12px; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .student-info { text-align: left; }
+        .student-name { font-size: 18px; font-weight: bold; margin: 0; }
+        .score { font-size: 16px; color: #007bff; margin: 5px 0 0 0; }
+        .emoji-group { display: flex; gap: 10px; }
+        .emoji-btn { 
+            font-size: 28px; 
+            cursor: pointer; 
+            border: none; 
+            background: #f0f0f0; 
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            transition: transform 0.2s, background 0.2s; 
+        }
+        .emoji-btn:hover { 
+            transform: scale(1.15); 
+            background: #e0e0e0;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h2>📋 ระบบเช็คชื่อ & คะแนนความประพฤติ</h2>
+        <p>กดอิโมจิเพื่อให้คะแนน: 🌟 (+1) | 😐 (0) | 💔 (-1)</p>
+
+        <div id="student-list">กำลังโหลดข้อมูล...</div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { getFirestore, collection, doc, updateDoc, increment, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+        // 1. ตั้งค่า Firebase ของคุณ
+        const firebaseConfig = {
+            apiKey: "AIzaSyDVCmkAwPTXBIZw3qaMG6x16UHsNqXVM3o",
+            authDomain: "nathapatapp-e69b4.firebaseapp.com",
+            projectId: "nathapatapp-e69b4",
+            storageBucket: "nathapatapp-e69b4.firebasestorage.app",
+            messagingSenderId: "767218497625",
+            appId: "1:767218497625:web:86b351809d14359f1a5948",
+            measurementId: "G-DXPHEWXZ6H"
+        };
+
+        // 2. เริ่มต้นการเชื่อมต่อ Firebase และ Firestore
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // 3. ข้อมูลนักเรียนจำลอง (เพื่อให้ระบบสร้างฐานข้อมูลอัตโนมัติในครั้งแรก)
+        const initialStudents = [
+            { id: "std01", name: "1. เด็กชาย สมชาย เรียนดี" },
+            { id: "std02", name: "2. เด็กหญิง สมหญิง รักเรียน" },
+            { id: "std03", name: "3. เด็กชาย มานะ อดทน" }
+        ];
+
+        // ฟังก์ชันสร้างข้อมูลนักเรียนลงฐานข้อมูล (ถ้ายังไม่มี)
+        async function setupInitialData() {
+            initialStudents.forEach(async (student) => {
+                const studentRef = doc(db, "students", student.id);
+                // ใช้ merge: true เพื่อไม่ให้คะแนนเดิมหายหากมีข้อมูลอยู่แล้ว
+                await setDoc(studentRef, { name: student.name }, { merge: true });
+                // ตั้งค่าคะแนนเริ่มต้นเป็น 0 ถ้ายังไม่มี
+                await setDoc(studentRef, { score: increment(0) }, { merge: true });
+            });
+        }
+        setupInitialData();
+
+        // 4. ฟังก์ชันสำหรับอัปเดตคะแนนเมื่อกดปุ่ม (ต้องผูกกับ window เพื่อให้ HTML เรียกใช้ได้)
+        window.updateScore = async function(studentId, point) {
+            const studentRef = doc(db, "students", studentId);
+            await updateDoc(studentRef, {
+                score: increment(point) // เพิ่ม/ลด คะแนนตามค่าที่ส่งมา
+            });
+        };
+
+        // 5. ดึงข้อมูลนักเรียนมาแสดงแบบ Real-time
+        const studentsCol = collection(db, "students");
+        onSnapshot(studentsCol, (snapshot) => {
+            const listDiv = document.getElementById('student-list');
+            listDiv.innerHTML = ''; // ล้างข้อความ "กำลังโหลด"
+
+            // แปลงข้อมูลเป็น Array เพื่อเรียงตามชื่อ (หรือ id)
+            let studentsData = [];
+            snapshot.forEach((doc) => {
+                studentsData.push({ id: doc.id, ...doc.data() });
+            });
+            studentsData.sort((a, b) => a.name.localeCompare(b.name));
+
+            // สร้าง UI แสดงนักเรียนแต่ละคน
+            studentsData.forEach((data) => {
+                const score = data.score || 0;
+                const card = `
+                    <div class="student-card">
+                        <div class="student-info">
+                            <p class="student-name">${data.name}</p>
+                            <p class="score">คะแนนสะสม: <strong>${score}</strong></p>
+                        </div>
+                        <div class="emoji-group">
+                            <button class="emoji-btn" onclick="updateScore('${data.id}', 1)" title="มาเรียน/ทำดี (+1)">🌟</button>
+                            <button class="emoji-btn" onclick="updateScore('${data.id}', 0)" title="สาย/ปกติ (+0)">😐</button>
+                            <button class="emoji-btn" onclick="updateScore('${data.id}', -1)" title="ขาด/ทำผิด (-1)">💔</button>
+                        </div>
+                    </div>
+                `;
+                listDiv.innerHTML += card;
+            });
+        });
+    </script>
+</body>
+</html>
